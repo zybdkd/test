@@ -1,66 +1,126 @@
--- Auto-Bind + UI Ghost Controller (versão para loadstring)
+loadstring([[
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
 
-local maxAutoSpawns = 5
-local autoDelay = {1.5, 3.5}
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local remoteDetected = false
-local capturedRemote, capturedArgs = nil, {}
-local enabled = false
-local toggleKey = Enum.KeyCode.P
-
-local function log(msg)
-    print("[🐾 UI-Ghost] " .. msg)
+local spawnPetRemote = nil
+for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+    if obj:IsA("RemoteEvent") and obj.Name:lower():find("spawn") and obj.Name:lower():find("pet") then
+        spawnPetRemote = obj
+        break
+    end
 end
 
-local function autoSpawn()
-    if not enabled or not capturedRemote then return end
-    log("Spawn iniciado")
-    for i = 1, maxAutoSpawns do
-        if not enabled then break end
-        local cloned = {}
-        for _, arg in ipairs(capturedArgs) do table.insert(cloned, arg) end
-        capturedRemote:FireServer(unpack(cloned))
-        wait(math.random(autoDelay[1]*100, autoDelay[2]*100)/100)
-    end
-    log("Spawn finalizado")
+if not spawnPetRemote then
+    warn("RemoteEvent para spawn de pets não encontrado automaticamente.")
+    return
 end
 
-local function toggle(state)
-    if state == nil then enabled = not enabled else enabled = state end
-    log("Auto-spawn " .. (enabled and "ON" or "OFF"))
-    if enabled then task.spawn(autoSpawn) end
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "PetSpawnerUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 280, 0, 120)
+frame.Position = UDim2.new(0.5, -140, 0.7, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.BorderSizePixel = 0
+frame.AnchorPoint = Vector2.new(0.5, 0.5)
+frame.Visible = true
+frame.Parent = screenGui
+
+local uicorner = Instance.new("UICorner", frame)
+uicorner.CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 28)
+title.BackgroundTransparency = 1
+title.Text = "Pet Spawner"
+title.TextColor3 = Color3.fromRGB(220,220,220)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.Parent = frame
+
+local petInput = Instance.new("TextBox")
+petInput.Size = UDim2.new(1, -20, 0, 32)
+petInput.Position = UDim2.new(0, 10, 0, 40)
+petInput.PlaceholderText = "Type pet name..."
+petInput.TextColor3 = Color3.fromRGB(240,240,240)
+petInput.BackgroundColor3 = Color3.fromRGB(50,50,50)
+petInput.BorderSizePixel = 0
+petInput.Font = Enum.Font.Gotham
+petInput.TextSize = 18
+petInput.Parent = frame
+
+local uicornerInput = Instance.new("UICorner", petInput)
+uicornerInput.CornerRadius = UDim.new(0, 6)
+
+local spawnButton = Instance.new("TextButton")
+spawnButton.Size = UDim2.new(1, -20, 0, 32)
+spawnButton.Position = UDim2.new(0, 10, 0, 80)
+spawnButton.BackgroundColor3 = Color3.fromRGB(70,130,230)
+spawnButton.BorderSizePixel = 0
+spawnButton.Font = Enum.Font.GothamBold
+spawnButton.TextSize = 18
+spawnButton.TextColor3 = Color3.fromRGB(255,255,255)
+spawnButton.Text = "Spawn Pet"
+spawnButton.Parent = frame
+
+local uicornerBtn = Instance.new("UICorner", spawnButton)
+uicornerBtn.CornerRadius = UDim.new(0, 6)
+
+local feedback = Instance.new("TextLabel")
+feedback.Size = UDim2.new(1, -20, 0, 24)
+feedback.Position = UDim2.new(0, 10, 1, -30)
+feedback.BackgroundTransparency = 1
+feedback.TextColor3 = Color3.fromRGB(180,180,180)
+feedback.Font = Enum.Font.Gotham
+feedback.TextSize = 14
+feedback.Text = ""
+feedback.TextWrapped = true
+feedback.Parent = frame
+
+local function spawnPet(petName)
+    if not petName or petName == "" then
+        feedback.Text = "Enter a valid pet name."
+        return
+    end
+
+    feedback.Text = "Spawning '"..petName.."'..."
+    spawnButton.Text = "Spawning..."
+    spawnButton.Active = false
+
+    task.spawn(function()
+        local success, err = pcall(function()
+            spawnPetRemote:FireServer(petName)
+        end)
+
+        task.wait(0.3)
+
+        if success then
+            feedback.Text = "Pet '"..petName.."' spawned!"
+        else
+            feedback.Text = "Failed to spawn pet: "..tostring(err)
+        end
+
+        spawnButton.Text = "Spawn Pet"
+        spawnButton.Active = true
+    end)
 end
 
-LocalPlayer.Chatted:Connect(function(msg)
-    msg = msg:lower()
-    if msg == "!pet on" then toggle(true)
-    elseif msg == "!pet off" then toggle(false) end
+spawnButton.MouseButton1Click:Connect(function()
+    spawnPet(petInput.Text)
 end)
 
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == toggleKey then toggle()
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Escape then
+        frame.Visible = not frame.Visible
+        feedback.Text = ""
     end
 end)
-
-local mt = getrawmetatable(game)
-setreadonly(mt, false)
-local oldNamecall = mt.__namecall
-
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    if not remoteDetected and method == "FireServer" and self:IsA("RemoteEvent") then
-        capturedRemote = self
-        capturedArgs = args
-        remoteDetected = true
-        log("Remote capturado: " .. self.Name)
-        setreadonly(mt, true)
-    end
-    return oldNamecall(self, ...)
-end)
-
-log("Ativo. Digite !pet on ou pressione P após spawnar 1 pet manualmente.")
+]])()
