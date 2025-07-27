@@ -1,0 +1,66 @@
+-- Auto-Bind + UI Ghost Controller (versão para loadstring)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local maxAutoSpawns = 5
+local autoDelay = {1.5, 3.5}
+
+local remoteDetected = false
+local capturedRemote, capturedArgs = nil, {}
+local enabled = false
+local toggleKey = Enum.KeyCode.P
+
+local function log(msg)
+    print("[🐾 UI-Ghost] " .. msg)
+end
+
+local function autoSpawn()
+    if not enabled or not capturedRemote then return end
+    log("Spawn iniciado")
+    for i = 1, maxAutoSpawns do
+        if not enabled then break end
+        local cloned = {}
+        for _, arg in ipairs(capturedArgs) do table.insert(cloned, arg) end
+        capturedRemote:FireServer(unpack(cloned))
+        wait(math.random(autoDelay[1]*100, autoDelay[2]*100)/100)
+    end
+    log("Spawn finalizado")
+end
+
+local function toggle(state)
+    if state == nil then enabled = not enabled else enabled = state end
+    log("Auto-spawn " .. (enabled and "ON" or "OFF"))
+    if enabled then task.spawn(autoSpawn) end
+end
+
+LocalPlayer.Chatted:Connect(function(msg)
+    msg = msg:lower()
+    if msg == "!pet on" then toggle(true)
+    elseif msg == "!pet off" then toggle(false) end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == toggleKey then toggle()
+    end
+end)
+
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local oldNamecall = mt.__namecall
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if not remoteDetected and method == "FireServer" and self:IsA("RemoteEvent") then
+        capturedRemote = self
+        capturedArgs = args
+        remoteDetected = true
+        log("Remote capturado: " .. self.Name)
+        setreadonly(mt, true)
+    end
+    return oldNamecall(self, ...)
+end)
+
+log("Ativo. Digite !pet on ou pressione P após spawnar 1 pet manualmente.")
